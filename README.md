@@ -1,6 +1,27 @@
-# 🤖 CodeRAG Docker - Code Analysis System
+# 🤖 CodeRAG - Intelligent Code Analysis System
 
-Complete RAG (Retrieval-Augmented Generation) system for code analysis using Ollama, with support for multiple vector database backends (ChromaDB and OpenSearch), fully containerized.
+Complete RAG (Retrieval-Augmented Generation) system for code analysis using Ollama, with GitLab MR review integration, incremental indexing, and comprehensive debugging capabilities. Fully containerized with multiple vector database backends.
+
+## 🚀 Features
+
+### 🎯 Core Capabilities
+- **🔍 Intelligent Code Search** - Semantic search through your codebase
+- **💬 Natural Language Queries** - Ask questions about your code in plain English
+- **📁 Project Management** - Index and manage multiple projects
+- **🔄 Incremental Updates** - Fast updates for changed files only
+- **🌐 Web Interface** - Beautiful, responsive web UI
+- **⚡ CLI Tools** - Powerful command-line interface
+
+### 🔧 GitLab Integration
+- **📋 MR Review Automation** - Automated merge request reviews
+- **🎨 Review Templates** - Customizable review templates
+- **⚙️ CI/CD Integration** - GitLab pipeline integration
+- **📊 Batch Processing** - Review multiple MRs efficiently
+- **🔍 Debug Logging** - Comprehensive debug and tracing capabilities
+
+### 🗄️ Vector Database Backends
+- **ChromaDB** - Fast local storage (default)
+- **OpenSearch** - Scalable enterprise solution
 
 ## 🚀 Quick Start
 
@@ -23,411 +44,501 @@ ollama pull qwen2.5-coder
 ### 2. Quick Setup
 
 ```bash
-# Clone or download files
-git clone <repo> # or download files manually
-cd coderag-docker
+# Clone repository
+git clone <repo>
+cd RAG4code
 
 # Initial setup
 make setup
 
 # Place projects in folder
-cp -r /caminho/seus/projetos ./projects/
+cp -r /path/to/your/projects ./projects/
 
 # Start system
 make run
 ```
 
-### 3. Access Interface
+### 3. Access Interfaces
 
-- **Interface Web**: http://localhost:8080
+- **Web Interface**: http://localhost:8080
+- **API Documentation**: http://localhost:8080/health
 - **Logs**: `make logs`
 - **Shell**: `make shell`
 
+## 🌐 Web Interface
+
+### 💬 Questions Tab
+- Ask natural language questions about your code
+- Filter by specific projects
+- Adjustable context size
+- Real-time processing feedback
+
+### 📁 Index Tab
+- Index new projects
+- Full project analysis
+- Progress tracking
+- Error reporting
+
+### 🔄 Update Tab *(NEW)*
+- **Incremental updates** - Only process changed files
+- **Force update option** - Reprocess all files if needed
+- **Change detection** - Smart file modification tracking
+- **Detailed statistics** - See exactly what changed
+
+### 📊 Statistics Tab
+- Index statistics and metrics
+- File type distribution
+- Function and class counts
+- Storage usage information
+
+### 📂 Projects Tab
+- List available projects
+- Manage project indexing
+- View project status
+
+## 🔄 Incremental Updates
+
+### Why Incremental Updates?
+- **⚡ Faster** - Only processes changed files
+- **🔧 Efficient** - Saves time on large projects
+- **🎯 Smart** - Automatic change detection using file timestamps
+- **📊 Transparent** - Clear reporting of what changed
+
+### Usage Examples
+
+#### CLI
+```bash
+# Incremental update
+python code_rag_docker.py update --project myproject
+
+# Force update all files
+python code_rag_docker.py update --project myproject --force
+
+# JSON output
+python code_rag_docker.py update --project myproject --output json
+```
+
+#### Web Interface
+1. Go to "🔄 Update" tab
+2. Select your project
+3. Check "Force update" if needed
+4. Click "🔄 Update"
+
+#### API
+```bash
+curl -X POST http://localhost:8080/api/update \
+  -H "Content-Type: application/json" \
+  -d '{"project": "myproject", "force_update": false}'
+```
+
+## 🔧 GitLab MR Review Integration
+
+### Overview
+Automated GitLab merge request reviews using CodeRAG semantic search and AI analysis.
+
+### Features
+- **🎨 Review Templates** - Customizable review patterns
+- **📊 Batch Processing** - Review multiple MRs efficiently  
+- **⚙️ CI/CD Integration** - GitLab pipeline integration
+- **🔍 Debug Logging** - Comprehensive tracing and debugging
+- **📋 Smart Analysis** - Context-aware code review
+
+### Quick Start
+
+#### 1. Setup GitLab Token
+```bash
+export GITLAB_TOKEN="your-gitlab-token"
+export GITLAB_URL="https://gitlab.example.com"
+```
+
+#### 2. Index Your Project
+```bash
+# First, index your project in CodeRAG
+python code_rag_docker.py index --project myproject
+```
+
+#### 3. Review a Merge Request
+```bash
+python gitlab_review.py review \
+  --project-id 123 \
+  --mr-id 456 \
+  --coderag-project myproject
+```
+
+#### 4. Advanced Usage with Debug Logging
+```bash
+# With comprehensive debug logging
+python gitlab_review.py review \
+  --project-id 123 \
+  --mr-id 456 \
+  --coderag-project myproject \
+  --verbose \
+  --debug-file debug.log
+```
+
+### Configuration Files
+
+#### Review Templates
+Create custom review templates in `gitlab_integration/templates/`:
+
+```yaml
+# gitlab_integration/templates/security_review.yaml
+name: "Security Review"
+description: "Security-focused code review"
+analysis_prompts:
+  - "Check for security vulnerabilities"
+  - "Identify potential SQL injection risks"
+  - "Review authentication and authorization"
+criteria:
+  - security: 0.8
+  - performance: 0.6
+```
+
+#### CI/CD Integration
+Add to your `.gitlab-ci.yml`:
+
+```yaml
+code_review:
+  stage: review
+  script:
+    - python gitlab_review.py review --project-id $CI_PROJECT_ID --mr-id $CI_MERGE_REQUEST_IID
+  only:
+    - merge_requests
+```
+
+### Debug and Tracing
+
+#### Comprehensive Debug Logging
+```bash
+# Enable verbose logging with file output
+python gitlab_review.py review \
+  --project-id 123 \
+  --mr-id 456 \
+  --coderag-project myproject \
+  --verbose \
+  --debug-file gitlab_debug.log
+```
+
+#### What Gets Logged
+- **🔍 RAG Query Details** - Exact queries sent to CodeRAG
+- **📊 RAG Results** - Code chunks and relevance scores
+- **🤖 LLM Communication** - Full prompts and responses to/from Ollama
+- **⏱️ Performance Metrics** - Timing and token usage
+- **🔄 Process Flow** - Step-by-step execution trace
+
+#### Debug Output Example
+```
+🔍 RAG Query: "analyze authentication logic in user_controller.py"
+📊 Found 5 relevant chunks:
+   - user_controller.py:45-67 (score: 0.89)
+   - auth_service.py:23-45 (score: 0.85)
+🤖 LLM Request: 2,450 tokens sent to qwen2.5-coder
+⏱️ Processing time: 3.2s
+✅ Review completed: 1,200 tokens generated
+```
+
 ## 🗄️ Vector Database Backends
 
-This system supports two vector database backends:
-
 ### ChromaDB (Default)
-- **Usage**: Local, embeddings and data stored in Docker volume
-- **Advantages**: Simple, fast setup, great for development
-- **Configuration**: `VECTOR_DB_TYPE=chroma` (default)
+- **Usage**: Local storage, great for development
+- **Advantages**: Simple setup, fast performance
+- **Configuration**: `VECTOR_DB_TYPE=chroma`
 
 ### OpenSearch
-- **Usage**: Remote cluster, hybrid search (vector + text)
-- **Advantages**: Scalable, advanced search, ideal for production
+- **Usage**: Remote cluster, enterprise-grade
+- **Advantages**: Scalable, hybrid search, production-ready
 - **Configuration**: `VECTOR_DB_TYPE=opensearch`
 
-### Comparison and When to Use
-
-| Aspecto               | ChromaDB                | OpenSearch               |
-| --------------------- | ----------------------- | ------------------------ |
-| **Setup**             | ✅ Simples              | ⚙️ Requer cluster         |
-| **Performance**       | ✅ Rápido (local)       | ⚡ Escalável              |
-| **Busca**             | 🔍 Vetorial             | 🔍🔤 Híbrida (vet+text)   |
-| **Ideal for**         | Development/Testing     | Production/Large volumes |
-| **Dependencies**      | 📦 Docker Volume        | 🌐 External cluster        |
-| **Resources**         | 💻 Low                 | 🖥️ Configurable           |
-
-## 📁 Estrutura de Arquivos
+## 📁 Project Structure
 
 ```
-coderag-docker/
-├── Dockerfile                  # Imagem Docker
-├── docker-compose.yml          # Orquestração
-├── code_rag_docker.py         # Sistema RAG com ChromaDB
-├── code_rag_opensearch.py     # Sistema RAG com OpenSearch
-├── interactive_docker.py      # Modo interativo (suporta ambos backends)
-├── web_api.py                 # API web com interface
-├── entrypoint.sh              # Script de entrada
-├── healthcheck.sh             # Health check
-├── requirements.txt           # Dependências Python
-├── Makefile                  # Comandos facilitados
-├── .env.example              # Configurações exemplo
-├── projects/                 # Seus projetos (volume)
-└── README.md                # Esta documentação
+RAG4code/
+├── 🐳 Docker & Deployment
+│   ├── Dockerfile
+│   ├── docker-compose.yml
+│   ├── entrypoint.sh
+│   └── requirements.txt
+├── 🤖 Core RAG System
+│   ├── code_rag_docker.py       # ChromaDB backend
+│   ├── code_rag_opensearch.py   # OpenSearch backend
+│   ├── code_rag.py              # Unified interface
+│   └── interactive_docker.py    # Interactive mode
+├── 🌐 Web Interface
+│   └── web_api.py               # Flask web API + UI
+├── 🔧 GitLab Integration
+│   ├── gitlab_review.py         # Main review script
+│   ├── gitlab_integration/
+│   │   ├── gitlab_client.py     # GitLab API client
+│   │   ├── mr_analyzer.py       # MR analysis logic
+│   │   ├── review_generator.py  # AI review generation
+│   │   └── templates/           # Review templates
+├── 📚 Documentation
+│   ├── README.md               # This file
+│   ├── USE_GUIDE.md           # Detailed usage guide
+│   ├── DEBUG_GUIDE.md         # Debug and troubleshooting
+│   └── docs/                  # Additional documentation
+├── 🧪 Testing
+│   ├── tests/                 # Test suite
+│   ├── test_debug_simple.py   # Debug testing
+│   └── test_incremental_web.py # Incremental update tests
+├── 📊 Project Data
+│   └── projects/              # Your code projects (volume)
+└── ⚙️ Configuration
+    ├── .env.example
+    ├── Makefile
+    └── requirements_gitlab.txt
 ```
 
-## 🐳 Modos de Uso
+## 🐳 Usage Modes
 
-### 1. Interface Web (Recomendado)
+### 1. Web Interface (Recommended)
 
 ```bash
 make run
-# Acesse: http://localhost:8080
+# Access: http://localhost:8080
 ```
 
-**Recursos da interface:**
+**Features:**
+- 💬 Ask questions about your code
+- 📁 Index projects via dropdown  
+- 🔄 Incremental updates with progress tracking
+- 📊 Real-time statistics
+- 📂 Project management
 
-- 💬 Fazer perguntas sobre código
-- 📁 Indexar projetos via dropdown
-- 📊 Ver estatísticas em tempo real
-- 📂 Gerenciar projetos
-
-### 2. Linha de Comando
+### 2. Command Line Interface
 
 ```bash
-# Indexar projeto
-make index PROJECT=meu-projeto
+# Index project
+make index PROJECT=myproject
 
-# Fazer pergunta
-make ask QUESTION="Como funciona a autenticação?"
+# Incremental update
+python code_rag_docker.py update --project myproject
 
-# Ver estatísticas
+# Ask questions
+make ask QUESTION="How does authentication work?"
+
+# View statistics
 make stats
 
-# Listar projetos
+# List projects
 make projects
 ```
 
-### 3. Modo Interativo
+### 3. Interactive Mode
 
 ```bash
-# ChromaDB (padrão)
+# ChromaDB (default)
 make interactive
 
 # OpenSearch
 VECTOR_DB_TYPE=opensearch make interactive
 ```
 
-**Recursos do modo interativo:**
-- 🔄 Seleção automática do backend baseada em `VECTOR_DB_TYPE`
-- 📊 Exibição clara do backend ativo
-- 🛠️ Comandos específicos por backend (clear_collection vs clear_index)
+### 4. GitLab MR Reviews
 
-### 4. Docker Run Direto
-
-#### ChromaDB (Local)
 ```bash
-# API Web
-docker run -d \
-  -p 8080:8080 \
-  -e VECTOR_DB_TYPE=chroma \
-  -v ./projects:/projects:ro \
-  -v coderag_data:/data \
-  -v coderag_chroma:/chroma_db \
-  --add-host=host.docker.internal:host-gateway \
-  coderag web
+# Simple review
+python gitlab_review.py review --project-id 123 --mr-id 456
 
-# Modo Interativo
-docker run -it --rm \
-  -e VECTOR_DB_TYPE=chroma \
-  -v ./projects:/projects:ro \
-  -v coderag_data:/data \
-  -v coderag_chroma:/chroma_db \
-  --add-host=host.docker.internal:host-gateway \
-  coderag python interactive_docker.py
+# With debugging
+python gitlab_review.py review \
+  --project-id 123 --mr-id 456 \
+  --verbose --debug-file review.log
+
+# Batch review
+python gitlab_review.py batch-review \
+  --project-id 123 \
+  --mr-states opened,ready_for_review
 ```
 
-#### OpenSearch (Remoto)
-```bash
-# API Web
-docker run -d \
-  -p 8080:8080 \
-  -e VECTOR_DB_TYPE=opensearch \
-  -e OPENSEARCH_HOST=your-opensearch-host \
-  -e OPENSEARCH_USER=admin \
-  -e OPENSEARCH_PASSWORD=admin \
-  -v ./projects:/projects:ro \
-  -v coderag_data:/data \
-  --add-host=host.docker.internal:host-gateway \
-  coderag web
+## ⚙️ Configuration
 
-# Modo Interativo
-docker run -it --rm \
-  -e VECTOR_DB_TYPE=opensearch \
-  -e OPENSEARCH_HOST=your-opensearch-host \
-  -e OPENSEARCH_USER=admin \
-  -e OPENSEARCH_PASSWORD=admin \
-  -v ./projects:/projects:ro \
-  -v coderag_data:/data \
-  --add-host=host.docker.internal:host-gateway \
-  coderag python interactive_docker.py
-```
+### Environment Variables
 
-## ⚙️ Configuração
-
-### Variáveis de Ambiente Principais
-
-#### Configurações Gerais
-| Variável             | Padrão                              | Descrição                     |
+#### General Configuration
+| Variable             | Default                              | Description                     |
 | -------------------- | ----------------------------------- | ----------------------------- |
-| `VECTOR_DB_TYPE`     | `chroma`                            | Backend: `chroma` ou `opensearch` |
-| `OLLAMA_HOST`        | `http://host.docker.internal:11434` | URL do servidor Ollama        |
-| `EMBEDDING_MODEL`    | `nomic-embed-text`                  | Modelo para embeddings        |
-| `CHAT_MODEL`         | `qwen2.5-coder`                     | Modelo para chat/respostas    |
-| `CHUNK_SIZE`         | `1500`                              | Tamanho dos chunks de código  |
-| `MAX_CONTEXT_CHUNKS` | `5`                                 | Chunks enviados para contexto |
-| `FILE_PATTERNS`      | `*.py,*.js,*.ts,...`                | Padrões de arquivos a indexar |
-| `IGNORE_PATTERNS`    | `node_modules,.git,...`             | Padrões a ignorar             |
+| `VECTOR_DB_TYPE`     | `chroma`                            | Backend: `chroma` or `opensearch` |
+| `OLLAMA_HOST`        | `http://host.docker.internal:11434` | Ollama server URL             |
+| `EMBEDDING_MODEL`    | `nomic-embed-text`                  | Model for embeddings          |
+| `CHAT_MODEL`         | `qwen2.5-coder`                     | Model for chat/responses      |
+| `CHUNK_SIZE`         | `1500`                              | Code chunk size               |
+| `MAX_CONTEXT_CHUNKS` | `5`                                 | Context chunks for responses  |
 
-#### ChromaDB Específicas
-| Variável             | Padrão                              | Descrição                     |
+#### GitLab Integration
+| Variable             | Default                              | Description                     |
 | -------------------- | ----------------------------------- | ----------------------------- |
-| `COLLECTION_NAME`    | `code_project`                      | Nome da coleção no ChromaDB   |
-| `CHROMA_DB_PATH`     | `/chroma_db`                        | Caminho do banco ChromaDB     |
+| `GITLAB_TOKEN`       | -                                   | GitLab personal access token  |
+| `GITLAB_URL`         | `https://gitlab.com`                | GitLab instance URL           |
+| `CODERAG_HOST`       | `http://localhost:8080`             | CodeRAG API endpoint          |
 
-#### OpenSearch Específicas
-| Variável                 | Padrão              | Descrição                         |
+#### ChromaDB Specific
+| Variable             | Default                              | Description                     |
+| -------------------- | ----------------------------------- | ----------------------------- |
+| `COLLECTION_NAME`    | `code_project`                      | ChromaDB collection name      |
+| `CHROMA_DB_PATH`     | `/chroma_db`                        | ChromaDB storage path         |
+
+#### OpenSearch Specific
+| Variable                 | Default              | Description                         |
 | ------------------------ | ------------------- | --------------------------------- |
-| `OPENSEARCH_INDEX`       | `code-rag-index`    | Nome do índice OpenSearch         |
-| `OPENSEARCH_HOST`        | `localhost`         | Host do cluster OpenSearch        |
-| `OPENSEARCH_PORT`        | `9200`              | Porta do cluster OpenSearch       |
-| `OPENSEARCH_USER`        | `admin`             | Usuário para autenticação         |
-| `OPENSEARCH_PASSWORD`    | `admin`             | Senha para autenticação           |
-| `OPENSEARCH_USE_SSL`     | `false`             | Usar SSL/TLS                      |
-| `OPENSEARCH_VERIFY_CERTS`| `false`             | Verificar certificados SSL        |
+| `OPENSEARCH_INDEX`       | `code-rag-index`    | OpenSearch index name             |
+| `OPENSEARCH_HOST`        | `localhost`         | OpenSearch cluster host           |
+| `OPENSEARCH_PORT`        | `9200`              | OpenSearch cluster port           |
+| `OPENSEARCH_USER`        | `admin`             | Authentication username           |
+| `OPENSEARCH_PASSWORD`    | `admin`             | Authentication password           |
 
-### Arquivo .env
+## 🧪 Testing
 
+### Automated Test Suite
 ```bash
-# Copiar exemplo e editar
-cp .env.example .env
-nano .env
+# Run all tests
+python -m pytest tests/ -v
+
+# Test incremental updates
+python test_incremental_web.py
+
+# Test GitLab integration
+python test_debug_simple.py
 ```
 
-## 📊 Volumes Docker
-
-| Volume           | Caminho      | Descrição                           | Backend     |
-| ---------------- | ------------ | ----------------------------------- | ----------- |
-| `./projects`     | `/projects`  | Seus projetos de código (read-only) | Ambos       |
-| `coderag_data`   | `/data`      | Logs e dados da aplicação           | Ambos       |
-| `coderag_chroma` | `/chroma_db` | Banco vetorial ChromaDB (local)     | ChromaDB    |
-
-**Nota**: Para OpenSearch, os dados são armazenados no cluster remoto, não necessitando volume local.
-
-## 🔧 Comandos Úteis
-
-### Desenvolvimento
-
+### Manual Testing
 ```bash
-# Build para desenvolvimento
-make dev-build
-make dev-run
+# Test web API
+curl http://localhost:8080/health
 
-# Logs em tempo real
-make logs
+# Test incremental update
+python code_rag_docker.py update --project test-project --output json
 
-# Shell no container
-make shell
-```
-
-### Manutenção
-
-```bash
-# Limpar tudo (CUIDADO: remove volumes!)
-make clean
-
-# Apenas parar
-make stop
-
-# Reiniciar
-make stop && make run
-```
-
-### Debugging
-
-```bash
-# Ver logs específicos
-docker-compose logs coderag
-
-# Verificar saúde
-docker-compose ps
-
-# Exec comandos
-docker-compose exec coderag python code_rag.py stats
+# Test GitLab review (with debug)
+python gitlab_review.py review --project-id 123 --mr-id 456 --verbose
 ```
 
 ## 🚨 Troubleshooting
 
-### Problema: "Erro ao conectar com Ollama"
+### Common Issues
 
+#### "Cannot connect to Ollama"
 ```bash
-# Verificar se Ollama está rodando no host
+# Check if Ollama is running
 ollama serve
 
-# Verificar se modelos estão baixados
+# Verify models are downloaded
 ollama list
 
-# Testar conexão
+# Test connection
 curl http://localhost:11434/api/tags
 ```
 
-### Problema: "Erro ao conectar OpenSearch"
-
+#### "No changes detected in incremental update"
 ```bash
-# Verificar se OpenSearch está acessível
-curl -u admin:admin http://your-opensearch-host:9200
+# Check file modification times
+ls -la projects/myproject/
 
-# Testar credenciais
-curl -u admin:admin http://your-opensearch-host:9200/_cluster/health
-
-# Verificar variáveis de ambiente
-echo $OPENSEARCH_HOST
-echo $OPENSEARCH_USER
-echo $OPENSEARCH_PASSWORD
+# Force update to reprocess all files
+python code_rag_docker.py update --project myproject --force
 ```
 
-### Problema: "Backend não suportado"
-
+#### "GitLab authentication failed"
 ```bash
-# Verificar variável de ambiente
-echo $VECTOR_DB_TYPE
+# Verify token
+echo $GITLAB_TOKEN
 
-# Definir backend correto
-export VECTOR_DB_TYPE=chroma
-# ou
-export VECTOR_DB_TYPE=opensearch
+# Test GitLab API access
+curl -H "Authorization: Bearer $GITLAB_TOKEN" $GITLAB_URL/api/v4/user
 ```
 
-### Problema: "Nenhum projeto encontrado"
-
+#### "Debug logs not showing"
 ```bash
-# Verificar se projetos estão no local correto
-ls -la ./projects/
+# Enable verbose mode with file output
+python gitlab_review.py review \
+  --project-id 123 --mr-id 456 \
+  --verbose \
+  --debug-file debug.log
 
-# Verificar permissões
-chmod -R 755 ./projects/
+# Check log file
+tail -f debug.log
 ```
 
-### Problema: "Container não inicia"
+### Performance Optimization
 
+#### For Large Projects
 ```bash
-# Ver logs detalhados
-make logs
+# Increase timeouts
+export REQUEST_TIMEOUT=300
 
-# Verificar configuração
-docker-compose config
+# Larger chunk size
+export CHUNK_SIZE=2000
 
-# Verificar recursos
-docker system df
+# More context
+export MAX_CONTEXT_CHUNKS=10
 ```
 
-### Problema: Performance lenta
-
+#### For Limited Resources
 ```bash
-# Ajustar chunk size
-export CHUNK_SIZE=1000
+# Smaller chunks
+export CHUNK_SIZE=800
 
-# Reduzir contexto
+# Less context
 export MAX_CONTEXT_CHUNKS=3
 
-# Verificar recursos da máquina
-docker stats
+# Specific file patterns
+export FILE_PATTERNS="*.py,*.js"
 ```
 
-## 📈 Otimização
+## 📊 API Reference
 
-### Para Projetos Grandes
+### Core RAG API
+- `GET /health` - System health check
+- `POST /api/ask` - Ask questions about code
+- `POST /api/index` - Index a project
+- `POST /api/update` - Incremental project update *(NEW)*
+- `GET /api/stats` - Index statistics
+- `GET /api/projects` - List projects
 
-```bash
-# Aumentar timeout
-REQUEST_TIMEOUT=300
+### GitLab Integration API
+- Review single MR: `gitlab_review.py review`
+- Batch review: `gitlab_review.py batch-review`  
+- CI/CD integration: See `.gitlab-ci.yml` examples
 
-# Chunk size maior
-CHUNK_SIZE=2000
+## 🔐 Security
 
-# Mais contexto
-MAX_CONTEXT_CHUNKS=10
-```
+- ✅ **Non-root execution** - Containers run as non-root user
+- ✅ **Read-only project volumes** - Source code mounted read-only
+- ✅ **Isolated data storage** - Persistent data in dedicated volumes
+- ✅ **Token-based authentication** - Secure GitLab API access
+- ✅ **Health checks** - Automated container health monitoring
 
-### Para Máquinas Menores
+## 🆕 Recent Updates
 
-```bash
-# Chunk size menor
-CHUNK_SIZE=800
+### Version 2.1.0
+- **🔄 Incremental Updates** - Smart file change detection and processing
+- **🌐 Enhanced Web UI** - New Update tab with progress tracking
+- **🔍 Comprehensive Debug Logging** - Full RAG and LLM tracing
+- **📊 Detailed Statistics** - Enhanced metrics and reporting
+- **🧪 Improved Testing** - Comprehensive test suite and validation
 
-# Menos contexto
-MAX_CONTEXT_CHUNKS=3
+### Version 2.0.0
+- **🔧 GitLab MR Review Integration** - Complete automated review system
+- **🎨 Review Templates** - Customizable review patterns
+- **⚙️ CI/CD Integration** - GitLab pipeline support
+- **📋 Batch Processing** - Multiple MR review capabilities
 
-# Filtros mais específicos
-FILE_PATTERNS="*.py,*.js"
-```
+## 🤝 Contributing
 
-## 🔐 Segurança
+1. Fork the repository
+2. Create feature branch: `git checkout -b feature/amazing-feature`
+3. Commit changes: `git commit -m 'Add amazing feature'`
+4. Push to branch: `git push origin feature/amazing-feature`
+5. Open a Pull Request
 
-- ✅ **Execução como usuário não-root**
-- ✅ **Volumes read-only para projetos**
-- ✅ **Dados persistentes isolados**
-- ✅ **Sem acesso à internet dos containers**
-- ✅ **Health checks configurados**
+## 📄 License
 
-## 🆕 Recursos Avançados
+MIT License - see LICENSE for details.
 
-### Multi-modelo
+## 🙏 Acknowledgments
 
-```bash
-# Usar modelos diferentes por projeto
-EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
-CHAT_MODEL=codellama:7b
-```
-
-### Filtros Customizados
-
-```bash
-# Apenas Python e JavaScript
-FILE_PATTERNS="*.py,*.js,*.ts"
-
-# Ignorar testes
-IGNORE_PATTERNS="*test*,*spec*,__pycache__"
-```
-
-### API Customizada
-
-```python
-# Estender web_api.py
-@app.route('/api/custom')
-def custom_endpoint():
-    return jsonify({"custom": "response"})
-```
-
-## 🤝 Contribuição
-
-1. Fork do projeto
-2. Criar branch: `git checkout -b feature/nova-funcionalidade`
-3. Commit: `git commit -m 'Add nova funcionalidade'`
-4. Push: `git push origin feature/nova-funcionalidade`
-5. Pull Request
-
-## 📄 Licença
-
-MIT License - veja LICENSE para detalhes.
+- **Ollama** - Local LLM inference
+- **ChromaDB** - Vector database
+- **OpenSearch** - Enterprise search
+- **GitLab** - DevOps platform
+- **Flask** - Web framework

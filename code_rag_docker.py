@@ -644,6 +644,284 @@ class DockerCodeRAGSystem:
             logger.error(f"Error getting indexed projects: {e}")
             return {"projects": {}, "error": str(e)}
     
+    def update_project_incremental(self, 
+                                  project_path: str,
+                                  file_patterns: List[str] = None,
+                                  ignore_patterns: List[str] = None,
+                                  force_update: bool = False) -> Dict:
+        """
+        Update project index incrementally - only process changed files.
+        
+        Args:
+            project_path: Path to the project
+            file_patterns: File patterns to include
+            ignore_patterns: Patterns to ignore
+            force_update: If True, reprocess all files regardless of modification time
+            
+        Returns:
+            Dictionary with update statistics
+        """
+        
+        # Use same default patterns as full indexing
+        if file_patterns is None:
+            env_patterns = os.getenv('FILE_PATTERNS', '')
+            if env_patterns:
+                file_patterns = [p.strip() for p in env_patterns.split(',')]
+            else:
+                file_patterns = [
+                    "*.py", "*.js", "*.ts", "*.jsx", "*.tsx", "*.vue",
+                    "*.java", "*.cpp", "*.c", "*.h", "*.hpp", "*.cs",
+                    "*.php", "*.rb", "*.go", "*.rs", "*.kt", "*.swift",
+                    "*.sql", "*.json", "*.yaml", "*.yml", "*.toml",
+                    "*.md", "*.txt", "*.dockerfile", "Dockerfile",
+                    "requirements.txt", "package.json", "pom.xml",
+                    "*.sh", "*.bash", "*.zsh"
+                ]
+        
+        if ignore_patterns is None:
+            env_ignore = os.getenv('IGNORE_PATTERNS', '')
+            if env_ignore:
+                ignore_patterns = [p.strip() for p in env_ignore.split(',')]
+            else:
+                ignore_patterns = [
+                    "node_modules", ".git", "__pycache__", ".venv", "venv",
+                    "build", "dist", ".pytest_cache", ".mypy_cache",
+                    ".next", ".nuxt", "target", "bin", "obj", ".gradle",
+                    "vendor", "composer.lock", "package-lock.json", "yarn.lock"
+                ]
+        
+        # Resolve project path
+        if not os.path.isabs(project_path):
+            project_path = self.projects_dir / project_path
+        else:
+            project_path = Path(project_path)
+        
+        if not project_path.exists():
+            error_msg = f"❌ Path not found: {project_path}"
+            logger.error(error_msg)
+            return {"error": error_msg, "updated_chunks": 0}
+        
+        project_name = project_path.name
+        logger.info(f"🔄 Incremental update for project: {project_name} ({project_path})")
+        
+        # Get current indexed files and their timestamps
+        indexed_files_info = self._get_indexed_files_info(project_name)
+        logger.info(f"📊 Found {len(indexed_files_info)} previously indexed files")
+        
+        # Collect current files
+        current_files = []
+        for pattern in file_patterns:
+            files = list(project_path.rglob(pattern))
+            filtered_files = []
+            for file_path in files:
+                if any(ignore_dir in str(file_path) for ignore_dir in ignore_patterns):
+                    continue
+                if file_path.is_file() and file_path.stat().st_size > 0:
+                    filtered_files.append(file_path)
+            current_files.extend(filtered_files)
+        
+        logger.info(f"📄 Found {len(current_files)} current files")
+        
+        # Determine files to update
+        files_to_update = []
+        files_to_remove = []
+        new_files = []
+        unchanged_files = []
+        
+        current_file_paths = {str(f.relative_to(project_path)): f for f in current_files}
+        
+        # Check for removed files
+        for indexed_file in indexed_files_info.keys():
+            if indexed_file not in current_file_paths:
+                files_to_remove.append(indexed_file)
+                logger.info(f"🗑️  File removed: {indexed_file}")
+        
+        # Check for new and modified files
+        for rel_path, file_path in current_file_paths.items():
+            file_mtime = file_path.stat().st_mtime
+            
+            if rel_path in indexed_files_info:
+                indexed_mtime = indexed_files_info[rel_path]['mtime']
+                if force_update or file_mtime > indexed_mtime:
+                    files_to_update.append(file_path)
+                    logger.info(f"🔄 File modified: {rel_path}")
+                else:
+                    unchanged_files.append(file_path)
+            else:
+                new_files.append(file_path)
+                logger.info(f"🆕 New file: {rel_path}")
+        
+        # Remove chunks for deleted files
+        removed_chunks = 0
+        for file_to_remove in files_to_remove:
+            removed_chunks += self._remove_file_chunks(project_name, file_to_remove)
+        
+        # Process new and modified files
+        updated_chunks = 0
+        processed_files = 0
+        errors = []
+        
+        files_to_process = new_files + files_to_update
+        
+        if not files_to_process and not files_to_remove:
+            logger.info("✅ No files need updating")
+            return {
+                "project_name": project_name,
+                "status": "up_to_date",
+                "processed_files": 0,
+                "updated_chunks": 0,
+                "removed_chunks": 0,
+                "new_files": 0,
+                "modified_files": 0,
+                "removed_files": 0,
+                "unchanged_files": len(unchanged_files)
+            }
+        
+        logger.info(f"📝 Processing {len(files_to_process)} files...")
+        
+        for file_path in files_to_process:
+            try:
+                rel_path = str(file_path.relative_to(project_path))
+                logger.info(f"Processing: {rel_path}")
+                
+                # Remove existing chunks for this file (if it's an update)
+                if file_path in files_to_update:
+                    removed_count = self._remove_file_chunks(project_name, rel_path)
+                    logger.debug(f"Removed {removed_count} old chunks for {rel_path}")
+                
+                # Process file and add new chunks
+                chunks = self.chunk_code_file(file_path)
+                if not chunks:
+                    logger.warning(f"No chunks generated for {file_path}")
+                    continue
+                
+                file_mtime = file_path.stat().st_mtime
+                
+                # Generate embeddings and add to database
+                for chunk in chunks:
+                    embedding = self.get_embedding(chunk['content'])
+                    if not embedding:
+                        logger.warning(f"Failed to generate embedding for chunk from {file_path}")
+                        continue
+                    
+                    chunk_id = f"{project_name}_{file_path.stem}_{chunk['chunk_id']}_{chunk['hash'][:8]}"
+                    
+                    try:
+                        self.collection.add(
+                            embeddings=[embedding],
+                            documents=[chunk['content']],
+                            metadatas=[{
+                                'file': chunk['file'],
+                                'chunk_id': chunk['chunk_id'],
+                                'size': chunk['size'],
+                                'lines': chunk['lines'],
+                                'functions': json.dumps(chunk['functions']),
+                                'classes': json.dumps(chunk['classes']),
+                                'extension': chunk['extension'],
+                                'indexed_at': chunk['indexed_at'],
+                                'project_name': project_name,
+                                'relative_path': rel_path,
+                                'mtime': file_mtime
+                            }],
+                            ids=[chunk_id]
+                        )
+                        updated_chunks += 1
+                        
+                    except Exception as e:
+                        error_msg = f"Error adding chunk {chunk_id}: {e}"
+                        logger.error(error_msg)
+                        errors.append(error_msg)
+                
+                processed_files += 1
+                
+            except Exception as e:
+                error_msg = f"Error processing file {file_path}: {e}"
+                logger.error(error_msg)
+                errors.append(error_msg)
+        
+        # Generate summary
+        result = {
+            "project_name": project_name,
+            "status": "updated",
+            "processed_files": processed_files,
+            "updated_chunks": updated_chunks,
+            "removed_chunks": removed_chunks,
+            "new_files": len(new_files),
+            "modified_files": len(files_to_update),
+            "removed_files": len(files_to_remove),
+            "unchanged_files": len(unchanged_files),
+            "errors": errors
+        }
+        
+        logger.info(f"✅ Incremental update complete:")
+        logger.info(f"   📁 Project: {project_name}")
+        logger.info(f"   📝 Processed files: {processed_files}")
+        logger.info(f"   🆕 New files: {len(new_files)}")
+        logger.info(f"   🔄 Modified files: {len(files_to_update)}")
+        logger.info(f"   🗑️  Removed files: {len(files_to_remove)}")
+        logger.info(f"   📊 Updated chunks: {updated_chunks}")
+        logger.info(f"   🗑️  Removed chunks: {removed_chunks}")
+        
+        return result
+    
+    def _get_indexed_files_info(self, project_name: str) -> Dict[str, Dict]:
+        """Get information about currently indexed files for a project."""
+        try:
+            # Query all chunks for this project
+            results = self.collection.get(
+                where={"project_name": project_name}
+            )
+            
+            files_info = {}
+            
+            if results['metadatas']:
+                for metadata in results['metadatas']:
+                    rel_path = metadata.get('relative_path', metadata.get('file', ''))
+                    mtime = metadata.get('mtime', 0)
+                    
+                    if rel_path not in files_info:
+                        files_info[rel_path] = {
+                            'mtime': mtime,
+                            'chunks': 0
+                        }
+                    
+                    files_info[rel_path]['chunks'] += 1
+                    
+                    # Keep the most recent mtime if there are multiple chunks
+                    if mtime > files_info[rel_path]['mtime']:
+                        files_info[rel_path]['mtime'] = mtime
+            
+            return files_info
+            
+        except Exception as e:
+            logger.error(f"Error getting indexed files info: {e}")
+            return {}
+    
+    def _remove_file_chunks(self, project_name: str, relative_path: str) -> int:
+        """Remove all chunks for a specific file in a project."""
+        try:
+            # Find all chunks for this file
+            results = self.collection.get(
+                where={
+                    "$and": [
+                        {"project_name": project_name},
+                        {"relative_path": relative_path}
+                    ]
+                }
+            )
+            
+            if results['ids']:
+                chunk_count = len(results['ids'])
+                self.collection.delete(ids=results['ids'])
+                logger.debug(f"Removed {chunk_count} chunks for {relative_path}")
+                return chunk_count
+            
+            return 0
+            
+        except Exception as e:
+            logger.error(f"Error removing chunks for {relative_path}: {e}")
+            return 0
+    
     def clear_collection(self):
         """Clear current collection"""
         try:
@@ -661,13 +939,15 @@ class DockerCodeRAGSystem:
 
 def main():
     parser = argparse.ArgumentParser(description="RAG System for Code - Docker Version")
-    parser.add_argument('command', choices=['index', 'ask', 'stats', 'list', 'projects', 'clear'], 
+    parser.add_argument('command', choices=['index', 'update', 'ask', 'stats', 'list', 'projects', 'clear'], 
                        help='Comando a executar')
     parser.add_argument('--project', '-p', help='Project name (relative to /projects)')
     parser.add_argument('--question', '-q', help='Pergunta a fazer')
     parser.add_argument('--context', type=int, help='Number of context chunks')
     parser.add_argument('--output', '-o', choices=['json', 'text'], default='text',
                        help='Output format')
+    parser.add_argument('--force', action='store_true', 
+                       help='Force update all files (for update command)')
     
     args = parser.parse_args()
     
@@ -692,6 +972,31 @@ def main():
                 print(result['error'])
             else:
                 print(f"✅ Indexing completed: {result['indexed_chunks']} chunks")
+    
+    elif args.command == 'update':
+        if not args.project:
+            print("❌ Use --project to specify project name")
+            sys.exit(1)
+        
+        result = rag.update_project_incremental(args.project, force_update=args.force)
+        
+        if args.output == 'json':
+            print(json.dumps(result, indent=2))
+        else:
+            if 'error' in result:
+                print(result['error'])
+            elif result['status'] == 'up_to_date':
+                print("✅ Project is already up to date - no changes needed")
+            else:
+                print(f"✅ Incremental update completed:")
+                print(f"   📝 Processed files: {result['processed_files']}")
+                print(f"   🆕 New files: {result['new_files']}")
+                print(f"   🔄 Modified files: {result['modified_files']}")
+                print(f"   🗑️  Removed files: {result['removed_files']}")
+                print(f"   📊 Updated chunks: {result['updated_chunks']}")
+                print(f"   🗑️  Removed chunks: {result['removed_chunks']}")
+                if result.get('errors'):
+                    print(f"   ⚠️  Errors: {len(result['errors'])}")
     
     elif args.command == 'ask':
         if not args.question:

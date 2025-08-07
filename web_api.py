@@ -190,6 +190,7 @@ HTML_TEMPLATE = """
     <div class="tabs">
         <button class="tab active" onclick="showTab('query')">💬 Questions</button>
         <button class="tab" onclick="showTab('index')">📁 Index</button>
+        <button class="tab" onclick="showTab('update')">🔄 Update</button>
         <button class="tab" onclick="showTab('stats')">📊 Statistics</button>
         <button class="tab" onclick="showTab('projects')">📂 Projects</button>
     </div>
@@ -246,6 +247,40 @@ HTML_TEMPLATE = """
             </div>
             
             <div id="index-result"></div>
+        </div>
+    </div>
+
+    <!-- Tab: Update Project -->
+    <div id="update-tab" class="tab-content">
+        <div class="container">
+            <h2>🔄 Update Project (Incremental)</h2>
+            <p style="color: #666; margin-bottom: 20px;">
+                <strong>💡 Incremental Update:</strong> Only processes changed files (new, modified, or removed). 
+                Much faster than full re-indexing for large projects.
+            </p>
+            <div class="form-group">
+                <label for="update-project-name">Project name:</label>
+                <select id="update-project-name">
+                    <option value="">Loading projects...</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="force-update" style="width: auto; margin-right: 10px;">
+                    Force update all files (ignore modification time)
+                </label>
+            </div>
+            <div style="margin-bottom: 15px;">
+                <button onclick="updateProject()">🔄 Update</button>
+                <button onclick="checkUpdateStatus()" style="background: #28a745; margin-left: 10px;">📊 Check Status</button>
+            </div>
+            
+            <div class="loading" id="update-loading">
+                <div class="spinner"></div>
+                <p>Updating project... Analyzing changes...</p>
+            </div>
+            
+            <div id="update-result"></div>
         </div>
     </div>
 
@@ -389,6 +424,85 @@ HTML_TEMPLATE = """
             }
         }
 
+        // Update project incrementally
+        async function updateProject() {
+            const projectName = document.getElementById('update-project-name').value;
+            const forceUpdate = document.getElementById('force-update').checked;
+            
+            if (!projectName) {
+                alert('Please select a project');
+                return;
+            }
+            
+            document.getElementById('update-loading').style.display = 'block';
+            document.getElementById('update-result').innerHTML = '';
+            
+            try {
+                const response = await fetch('/api/update', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        project: projectName,
+                        force_update: forceUpdate
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.error) {
+                    document.getElementById('update-result').innerHTML = 
+                        `<div class="result error">❌ ${data.error}</div>`;
+                } else if (data.status === 'up_to_date') {
+                    document.getElementById('update-result').innerHTML = 
+                        `<div class="result success">
+                            ✅ Project is already up to date!<br>
+                            📁 No changes detected - no files need updating<br>
+                            📊 Unchanged files: ${data.unchanged_files}
+                        </div>`;
+                } else {
+                    const errorsInfo = data.errors && data.errors.length > 0 ? 
+                        `<br>⚠️ Errors: ${data.errors.length}` : '';
+                    
+                    document.getElementById('update-result').innerHTML = 
+                        `<div class="result success">
+                            ✅ Incremental update completed!<br>
+                            📝 Files processed: ${data.processed_files}<br>
+                            🆕 New files: ${data.new_files}<br>
+                            🔄 Modified files: ${data.modified_files}<br>
+                            🗑️ Removed files: ${data.removed_files}<br>
+                            📊 Updated chunks: ${data.updated_chunks}<br>
+                            🗑️ Removed chunks: ${data.removed_chunks}<br>
+                            ⏸️ Unchanged files: ${data.unchanged_files}${errorsInfo}
+                        </div>`;
+                    
+                    // Refresh indexed projects dropdown
+                    loadIndexedProjects();
+                }
+            } catch (error) {
+                document.getElementById('update-result').innerHTML = 
+                    `<div class="result error">❌ Error: ${error.message}</div>`;
+            } finally {
+                document.getElementById('update-loading').style.display = 'none';
+            }
+        }
+
+        // Check what would be updated without actually updating
+        async function checkUpdateStatus() {
+            const projectName = document.getElementById('update-project-name').value;
+            
+            if (!projectName) {
+                alert('Please select a project');
+                return;
+            }
+            
+            document.getElementById('update-result').innerHTML = 
+                `<div class="result">
+                    📊 <strong>Checking project status...</strong><br>
+                    This would show what files need updating, but the API doesn't support dry-run yet.<br>
+                    Use the update button to see actual changes.
+                </div>`;
+        }
+
         // Load statistics
         async function loadStats() {
             try {
@@ -479,6 +593,13 @@ HTML_TEMPLATE = """
                 select.innerHTML = '<option value="">Select a project</option>';
                 projectsList.forEach(project => {
                     select.innerHTML += `<option value="${project}">${project}</option>`;
+                });
+                
+                // Update project select in update tab
+                const updateSelect = document.getElementById('update-project-name');
+                updateSelect.innerHTML = '<option value="">Select a project</option>';
+                projectsList.forEach(project => {
+                    updateSelect.innerHTML += `<option value="${project}">${project}</option>`;
                 });
                 
                 // Show project list
@@ -604,6 +725,28 @@ def api_index():
 
     except Exception as e:
         logger.error(f"Error in index endpoint: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/update", methods=["POST"])
+def api_update():
+    """Endpoint for incremental project updates"""
+    if not rag_system:
+        return jsonify({"error": "System not initialized"}), 503
+
+    try:
+        data = request.get_json()
+        project = data.get("project", "").strip()
+        force_update = data.get("force_update", False)
+
+        if not project:
+            return jsonify({"error": "Project name is required"}), 400
+
+        result = rag_system.update_project_incremental(project, force_update=force_update)
+        return jsonify(result)
+
+    except Exception as e:
+        logger.error(f"Error in update endpoint: {e}")
         return jsonify({"error": str(e)}), 500
 
 
