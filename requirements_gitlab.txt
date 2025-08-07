@@ -1,0 +1,33 @@
+# GitLab Integration Additional Dependencies
+
+# GitLab API
+python-gitlab>=3.0.0
+requests>=2.31.0
+
+# Git and diff processing
+gitpython>=3.1.0
+diff-match-patch>=20230430
+
+# CLI enhancements
+click>=8.0.0
+colorama>=0.4.0
+tqdm>=4.65.0
+
+# Configuration management
+pyyaml>=6.0
+python-dotenv>=1.0.0
+
+# Testing framework
+pytest>=7.0.0
+pytest-mock>=3.10.0
+pytest-cov>=4.0.0
+responses>=0.23.0
+
+# Code quality
+flake8>=6.0.0
+mypy>=1.0.0
+black>=23.0.0
+
+# Documentation
+sphinx>=6.0.0
+sphinx-rtd-theme>=1.0.0

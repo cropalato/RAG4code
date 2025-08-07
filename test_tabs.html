@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Tab Test</title>
+    <style>
+        .tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 20px;
+        }
+        .tab {
+            padding: 10px 20px;
+            background: #333;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        .tab.active {
+            background: #6366f1;
+        }
+        .tab-content {
+            display: none;
+            padding: 20px;
+            background: #f0f0f0;
+        }
+        .tab-content.active {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <h1>Tab Test</h1>
+    
+    <div class="tabs">
+        <button class="tab active" onclick="showTab('tab1', this)">Tab 1</button>
+        <button class="tab" onclick="showTab('tab2', this)">Tab 2</button>
+        <button class="tab" onclick="showTab('tab3', this)">Tab 3</button>
+    </div>
+    
+    <div id="tab1" class="tab-content active">
+        <h2>Content 1</h2>
+        <p>This is the content for tab 1</p>
+    </div>
+    
+    <div id="tab2" class="tab-content">
+        <h2>Content 2</h2>
+        <p>This is the content for tab 2</p>
+    </div>
+    
+    <div id="tab3" class="tab-content">
+        <h2>Content 3</h2>
+        <p>This is the content for tab 3</p>
+    </div>
+    
+    <script>
+        console.log('Test page loaded!');
+        
+        function showTab(tabId, clickedButton) {
+            console.log('showTab called:', tabId);
+            
+            // Hide all content
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+            
+            // Remove active from all buttons
+            document.querySelectorAll('.tab').forEach(button => {
+                button.classList.remove('active');
+            });
+            
+            // Show selected content
+            document.getElementById(tabId).classList.add('active');
+            
+            // Activate clicked button
+            clickedButton.classList.add('active');
+        }
+    </script>
+</body>
+</html>

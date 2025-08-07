@@ -1,0 +1,127 @@
+# docker-compose.opensearch.yml
+# Configuration for CodeRAG with OpenSearch backend
+version: "3.8"
+
+services:
+  opensearch:
+    image: opensearchproject/opensearch:2.11.1
+    container_name: opensearch-node
+    environment:
+      # Cluster settings
+      - cluster.name=opensearch-cluster
+      - node.name=opensearch-node
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
+
+      # Security settings (development mode)
+      - "DISABLE_INSTALL_DEMO_CONFIG=true"
+      - "DISABLE_SECURITY_PLUGIN=true"
+
+      # Network settings
+      - network.host=0.0.0.0
+      - http.port=9200
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - opensearch_data:/usr/share/opensearch/data
+    ports:
+      - "9200:9200"
+      - "9600:9600"
+    networks:
+      - opensearch-net
+    restart: unless-stopped
+    healthcheck:
+      test:
+        ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  coderag:
+    #build: .
+    image: ragsys-opensearch:local
+    container_name: coderag-opensearch
+    ports:
+      - "8080:8080"
+    volumes:
+      # Volume para projetos (OBRIGATÓRIO)
+      - ./projects:/projects:ro
+      # Volume para dados persistentes
+      - coderag_data:/data
+    environment:
+      # Vector Database Configuration
+      VECTOR_DB_TYPE: opensearch
+
+      # OpenSearch Configuration
+      OPENSEARCH_HOST: opensearch
+      OPENSEARCH_PORT: 9200
+      OPENSEARCH_USER: admin
+      OPENSEARCH_PASSWORD: admin
+      OPENSEARCH_USE_SSL: false
+      OPENSEARCH_VERIFY_CERTS: false
+      OPENSEARCH_INDEX: code-rag-index
+
+      # Configuração Ollama
+      OLLAMA_HOST: http://host.docker.internal:11434
+      EMBEDDING_MODEL: nomic-embed-text
+      CHAT_MODEL: qwen2.5-coder
+
+      # Configuração RAG
+      CHUNK_SIZE: 1500
+      MAX_CONTEXT_CHUNKS: 5
+      TEMPERATURE: 0.1
+      TOP_P: 0.9
+      REQUEST_TIMEOUT: 120
+
+      # Configuração de arquivos
+      FILE_PATTERNS: "*.py,*.js,*.ts,*.jsx,*.tsx,*.java,*.cpp,*.c,*.h,*.cs"
+      IGNORE_PATTERNS: "node_modules,.git,__pycache__,.venv,build,dist"
+
+      # Configuração da API
+      API_PORT: 8080
+      FLASK_DEBUG: false
+
+      # Configuração de retry
+      OLLAMA_RETRY_COUNT: 5
+      OLLAMA_RETRY_DELAY: 10
+      WAIT_FOR_OLLAMA: true
+
+    # Adicionar host.docker.internal para acessar Ollama no host
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    # Wait for OpenSearch to be ready
+    depends_on:
+      opensearch:
+        condition: service_healthy
+
+    networks:
+      - opensearch-net
+
+    # Reiniciar automaticamente
+    restart: unless-stopped
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "./healthcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+
+volumes:
+  coderag_data:
+    driver: local
+  opensearch_data:
+    driver: local
+
+networks:
+  opensearch-net:
+    driver: bridge

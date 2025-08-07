@@ -1,0 +1,466 @@
+# docker-compose-opensearch.yml
+version: '3.8'
+
+services:
+  # OpenSearch Cluster
+  opensearch-node1:
+    image: opensearchproject/opensearch:2.11.0
+    container_name: opensearch-node1
+    environment:
+      - cluster.name=coderag-cluster
+      - node.name=opensearch-node1
+      - discovery.seed_hosts=opensearch-node1
+      - cluster.initial_cluster_manager_nodes=opensearch-node1
+      - bootstrap.memory_lock=true
+      - "OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g"
+      - "DISABLE_INSTALL_DEMO_CONFIG=true"
+      - "DISABLE_SECURITY_PLUGIN=true"  # Desabilitar para simplicidade
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - opensearch-data1:/usr/share/opensearch/data
+    ports:
+      - "9200:9200"
+      - "9600:9600"
+    networks:
+      - coderag-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9200/_cluster/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # OpenSearch Dashboards (opcional, para visualização)
+  opensearch-dashboards:
+    image: opensearchproject/opensearch-dashboards:2.11.0
+    container_name: opensearch-dashboards
+    ports:
+      - "5601:5601"
+    expose:
+      - "5601"
+    environment:
+      - 'OPENSEARCH_HOSTS=["http://opensearch-node1:9200"]'
+      - "DISABLE_SECURITY_DASHBOARDS_PLUGIN=true"
+    networks:
+      - coderag-network
+    depends_on:
+      opensearch-node1:
+        condition: service_healthy
+
+  # CodeRAG Application
+  coderag-opensearch:
+    build:
+      context: .
+      dockerfile: Dockerfile.opensearch
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./projects:/projects:ro
+      - coderag_data:/data
+    environment:
+      # Ollama Configuration
+      OLLAMA_HOST: http://host.docker.internal:11434
+      EMBEDDING_MODEL: nomic-embed-text
+      CHAT_MODEL: qwen2.5-coder
+      
+      # OpenSearch Configuration
+      OPENSEARCH_HOST: opensearch-node1
+      OPENSEARCH_PORT: 9200
+      OPENSEARCH_USER: admin
+      OPENSEARCH_PASSWORD: admin
+      OPENSEARCH_USE_SSL: false
+      OPENSEARCH_VERIFY_CERTS: false
+      OPENSEARCH_INDEX: code-rag-index
+      
+      # RAG Configuration
+      CHUNK_SIZE: 1500
+      MAX_CONTEXT_CHUNKS: 5
+      TEMPERATURE: 0.1
+      TOP_P: 0.9
+      REQUEST_TIMEOUT: 120
+      
+      # File Processing
+      FILE_PATTERNS: "*.py,*.js,*.ts,*.jsx,*.tsx,*.java,*.cpp,*.c,*.h,*.cs"
+      IGNORE_PATTERNS: "node_modules,.git,__pycache__,.venv,build,dist"
+      
+      # API Configuration
+      API_PORT: 8080
+      FLASK_DEBUG: false
+    
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    
+    networks:
+      - coderag-network
+    
+    depends_on:
+      opensearch-node1:
+        condition: service_healthy
+    
+    restart: unless-stopped
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  opensearch-data1:
+    driver: local
+  coderag_data:
+    driver: local
+
+networks:
+  coderag-network:
+    driver: bridge
+
+---
+
+# Dockerfile.opensearch
+FROM python:3.11-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+RUN apt-get update && apt-get install -y curl git && rm -rf /var/lib/apt/lists/*
+RUN mkdir -p /app /data /projects
+WORKDIR /app
+
+# Instalar dependências específicas para OpenSearch
+COPY requirements-opensearch.txt ./requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY opensearch_code_rag.py ./code_rag.py
+COPY opensearch_web_api.py ./web_api.py
+COPY interactive_opensearch.py ./interactive.py
+COPY entrypoint-opensearch.sh ./entrypoint.sh
+COPY healthcheck-opensearch.sh ./healthcheck.sh
+
+RUN chmod +x *.sh
+
+RUN groupadd -r coderag && useradd -r -g coderag coderag
+RUN chown -R coderag:coderag /app /data /projects
+
+USER coderag
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 CMD ["./healthcheck.sh"]
+ENTRYPOINT ["./entrypoint.sh"]
+CMD ["web"]
+
+---
+
+# requirements-opensearch.txt
+flask>=2.3.0
+flask-cors>=4.0.0
+opensearch-py>=2.3.0
+requests>=2.31.0
+urllib3>=1.26.0
+
+---
+
+# entrypoint-opensearch.sh
+#!/bin/bash
+set -e
+
+echo "🔍 CodeRAG with OpenSearch Starting..."
+echo "OpenSearch: ${OPENSEARCH_HOST}:${OPENSEARCH_PORT}"
+echo "Ollama: ${OLLAMA_HOST}"
+echo "Index: ${OPENSEARCH_INDEX}"
+
+mkdir -p /data /projects
+
+# Aguardar OpenSearch estar disponível
+if [ "${WAIT_FOR_OPENSEARCH:-true}" = "true" ]; then
+    echo "⏳ Aguardando OpenSearch..."
+    timeout=120
+    while [ $timeout -gt 0 ]; do
+        if curl -s "http://${OPENSEARCH_HOST}:${OPENSEARCH_PORT}/_cluster/health" > /dev/null 2>&1; then
+            echo "✅ OpenSearch disponível"
+            break
+        fi
+        echo "   Tentando conectar ao OpenSearch... ($timeout segundos restantes)"
+        sleep 5
+        timeout=$((timeout - 5))
+    done
+    
+    if [ $timeout -le 0 ]; then
+        echo "⚠️ Timeout aguardando OpenSearch, continuando..."
+    fi
+fi
+
+# Aguardar Ollama estar disponível
+if [ "${WAIT_FOR_OLLAMA:-true}" = "true" ]; then
+    echo "⏳ Aguardando Ollama..."
+    timeout=60
+    while [ $timeout -gt 0 ]; do
+        if curl -s "${OLLAMA_HOST}/api/tags" > /dev/null 2>&1; then
+            echo "✅ Ollama disponível"
+            break
+        fi
+        echo "   Tentando conectar ao Ollama... ($timeout segundos restantes)"
+        sleep 5
+        timeout=$((timeout - 5))
+    done
+fi
+
+case "$1" in
+    "web")
+        echo "🌐 Iniciando API Web..."
+        exec python web_api.py
+        ;;
+    "interactive")
+        echo "💬 Iniciando modo interativo..."
+        exec python interactive.py
+        ;;
+    "cli")
+        shift
+        echo "⌨️ Executando comando CLI..."
+        exec python code_rag.py "$@"
+        ;;
+    *)
+        exec python web_api.py
+        ;;
+esac
+
+---
+
+# healthcheck-opensearch.sh
+#!/bin/bash
+
+# Verificar processo Python
+if ! pgrep -f "python" > /dev/null; then
+    echo "❌ Processo Python não está rodando"
+    exit 1
+fi
+
+# Verificar API Web
+if ! curl -f -s http://localhost:8080/health > /dev/null; then
+    echo "❌ API web não responde"
+    exit 1
+fi
+
+# Verificar OpenSearch
+if ! curl -f -s "http://${OPENSEARCH_HOST}:${OPENSEARCH_PORT}/_cluster/health" > /dev/null; then
+    echo "❌ OpenSearch não disponível"
+    exit 1
+fi
+
+echo "✅ Sistema saudável"
+exit 0
+
+---
+
+# Makefile.opensearch
+.PHONY: build-os run-os stop-os logs-os shell-os index-os ask-os stats-os clean-os
+
+IMAGE_NAME = coderag-opensearch
+PROJECTS_DIR = ./projects
+
+# Build da imagem
+build-os:
+	@echo "🔨 Construindo imagem OpenSearch..."
+	docker build -f Dockerfile.opensearch -t $(IMAGE_NAME) .
+
+# Executar com OpenSearch
+run-os:
+	@echo "🚀 Iniciando CodeRAG com OpenSearch..."
+	docker-compose -f docker-compose-opensearch.yml up -d
+
+# Parar containers
+stop-os:
+	@echo "⏹️ Parando containers..."
+	docker-compose -f docker-compose-opensearch.yml down
+
+# Limpar tudo
+clean-os:
+	@echo "🧹 Limpando containers e volumes..."
+	docker-compose -f docker-compose-opensearch.yml down -v
+	docker rmi $(IMAGE_NAME) 2>/dev/null || true
+
+# Ver logs
+logs-os:
+	@echo "📋 Mostrando logs..."
+	docker-compose -f docker-compose-opensearch.yml logs -f coderag-opensearch
+
+# Shell no container
+shell-os:
+	@echo "🐚 Abrindo shell..."
+	docker-compose -f docker-compose-opensearch.yml exec coderag-opensearch bash
+
+# Comandos específicos
+index-os:
+	@if [ -z "$(PROJECT)" ]; then \
+		echo "❌ Use: make index-os PROJECT=nome_do_projeto"; \
+	else \
+		echo "📦 Indexando projeto: $(PROJECT)"; \
+		docker-compose -f docker-compose-opensearch.yml exec coderag-opensearch python code_rag.py index --project $(PROJECT); \
+	fi
+
+ask-os:
+	@if [ -z "$(QUESTION)" ]; then \
+		echo "❌ Use: make ask-os QUESTION=\"sua pergunta\""; \
+	else \
+		echo "❓ Fazendo pergunta..."; \
+		docker-compose -f docker-compose-opensearch.yml exec coderag-opensearch python code_rag.py ask --question "$(QUESTION)"; \
+	fi
+
+stats-os:
+	@echo "📊 Mostrando estatísticas..."
+	docker-compose -f docker-compose-opensearch.yml exec coderag-opensearch python code_rag.py stats
+
+# Dashboards
+dashboards:
+	@echo "📊 OpenSearch Dashboards: http://localhost:5601"
+	@open http://localhost:5601 2>/dev/null || xdg-open http://localhost:5601 2>/dev/null || echo "Acesse manualmente: http://localhost:5601"
+
+# Setup inicial
+setup-os:
+	@echo "⚙️ Setup OpenSearch..."
+	@mkdir -p $(PROJECTS_DIR)
+	@echo "OPENSEARCH_HOST=opensearch-node1" > .env.opensearch
+	@echo "OPENSEARCH_PORT=9200" >> .env.opensearch
+	@echo "OPENSEARCH_INDEX=code-rag-index" >> .env.opensearch
+	@echo "✅ Setup OpenSearch concluído!"
+
+---
+
+# .env.opensearch
+# OpenSearch Configuration
+OPENSEARCH_HOST=opensearch-node1
+OPENSEARCH_PORT=9200
+OPENSEARCH_USER=admin
+OPENSEARCH_PASSWORD=admin
+OPENSEARCH_USE_SSL=false
+OPENSEARCH_VERIFY_CERTS=false
+OPENSEARCH_INDEX=code-rag-index
+
+# Ollama Configuration
+OLLAMA_HOST=http://host.docker.internal:11434
+EMBEDDING_MODEL=nomic-embed-text
+CHAT_MODEL=qwen2.5-coder
+
+# RAG Configuration
+CHUNK_SIZE=1500
+MAX_CONTEXT_CHUNKS=5
+TEMPERATURE=0.1
+TOP_P=0.9
+
+# Performance
+WAIT_FOR_OPENSEARCH=true
+WAIT_FOR_OLLAMA=true
+
+---
+
+# README-OpenSearch.md
+# 🔍 CodeRAG com OpenSearch
+
+## Recursos Adicionais do OpenSearch:
+
+### ✅ Vantagens sobre ChromaDB:
+- **Busca Híbrida**: Vetorial + textual + filtros
+- **Escalabilidade**: Milhões de documentos
+- **Dashboards**: Interface visual para análise
+- **APIs REST**: Integração robusta
+- **Clustering**: Alta disponibilidade
+- **Agregações**: Estatísticas avançadas
+
+### 📊 Funcionalidades Extras:
+- **Filtro por projeto**: Buscar apenas em projetos específicos
+- **Highlight**: Destacar trechos relevantes
+- **Scoring avançado**: Combina similaridade vetorial + textual
+- **Agregações**: Estatísticas por projeto, extensão, etc.
+- **Dashboards**: Visualização via OpenSearch Dashboards
+
+## 🚀 Como Usar:
+
+### Setup Inicial:
+```bash
+# Setup
+make setup-os
+
+# Construir e iniciar
+make build-os
+make run-os
+
+# Aguardar inicialização (pode levar 2-3 minutos)
+make logs-os
+```
+
+### Comandos:
+```bash
+# Indexar projeto
+make index-os PROJECT=meu-projeto
+
+# Fazer pergunta
+make ask-os QUESTION="Como funciona a autenticação?"
+
+# Fazer pergunta filtrada por projeto
+docker-compose -f docker-compose-opensearch.yml exec coderag-opensearch \
+  python code_rag.py ask --question "Como funciona login?" --filter meu-projeto
+
+# Ver estatísticas
+make stats-os
+
+# Acessar dashboards
+make dashboards  # http://localhost:5601
+```
+
+### Interfaces:
+- **API Web**: http://localhost:8080
+- **OpenSearch**: http://localhost:9200
+- **Dashboards**: http://localhost:5601
+
+## 📈 Performance:
+
+### Recursos Recomendados:
+- **RAM**: 4GB+ (OpenSearch usa ~2GB)
+- **CPU**: 2+ cores
+- **Disk**: SSD recomendado
+
+### Para Projetos Grandes:
+```bash
+# Aumentar heap do OpenSearch
+# Editar docker-compose-opensearch.yml:
+# OPENSEARCH_JAVA_OPTS=-Xms2g -Xmx2g
+```
+
+## 🔧 Configurações Avançadas:
+
+### Clustering (Produção):
+- Adicionar mais nós OpenSearch
+- Configurar replicação
+- Load balancer
+
+### Security:
+- Habilitar SSL/TLS
+- Configurar autenticação
+- Role-based access control
+
+### Monitoring:
+- Métricas via Dashboards
+- Alertas personalizados
+- Performance monitoring
+
+## 📊 Comparação Prática:
+
+| Recurso | ChromaDB | OpenSearch |
+|---------|----------|------------|
+| Setup | Simples | Médio |
+| Recursos | Baixo (~500MB) | Alto (~2GB) |
+| Busca | Vetorial | Híbrida |
+| Filtros | Básicos | Avançados |
+| Dashboards | Não | Sim |
+| Produção | Pequeno/Médio | Enterprise |
+| Backup | Manual | Automático |
+
+**Recomendação**: 
+- **ChromaDB**: Para desenvolvimento e projetos pequenos/médios
+- **OpenSearch**: Para produção e projetos grandes/complexos

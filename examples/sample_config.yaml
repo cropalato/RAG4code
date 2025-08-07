@@ -1,0 +1,25 @@
+# GitLab Review Integration - Sample Configuration
+
+gitlab:
+  url: "https://gitlab.com"
+  token: "your-gitlab-token-here"  # Get from GitLab -> User Settings -> Access Tokens
+  timeout: 30
+  max_retries: 3
+  verify_ssl: true
+
+rag:
+  ollama_host: "http://localhost:11434"
+  embedding_model: "nomic-embed-text"
+  chat_model: "qwen2.5-coder"
+  max_context_chunks: 5
+  temperature: 0.1
+  top_p: 0.9
+
+review:
+  default_type: "general"  # Options: general, security, performance
+  max_line_length: 120
+  auto_post: false  # Set to true to automatically post reviews
+  include_line_comments: true
+  max_suggestions: 10
+
+log_level: "INFO"  # Options: DEBUG, INFO, WARNING, ERROR

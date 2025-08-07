@@ -1,0 +1,62 @@
+# docker-compose.yml
+version: "3.8"
+
+services:
+  coderag:
+    build: .
+    ports:
+      - "8080:8080" # API Web
+    volumes:
+      # Volume para projetos (OBRIGATÓRIO)
+      - ./projects:/projects:ro
+      # Volume para dados persistentes
+      - coderag_data:/data
+      # Volume para banco vetorial
+      - coderag_chroma:/chroma_db
+    environment:
+      # Configuração Ollama
+      OLLAMA_HOST: http://host.docker.internal:11434
+      EMBEDDING_MODEL: nomic-embed-text
+      CHAT_MODEL: qwen2.5-coder
+
+      # Configuração RAG
+      COLLECTION_NAME: code_project
+      CHUNK_SIZE: 1500
+      MAX_CONTEXT_CHUNKS: 5
+      TEMPERATURE: 0.1
+      TOP_P: 0.9
+      REQUEST_TIMEOUT: 120
+
+      # Configuração de arquivos
+      FILE_PATTERNS: "*.py,*.js,*.ts,*.jsx,*.tsx,*.java,*.cpp,*.c,*.h,*.cs"
+      IGNORE_PATTERNS: "node_modules,.git,__pycache__,.venv,build,dist"
+
+      # Configuração da API
+      API_PORT: 8080
+      FLASK_DEBUG: false
+
+      # Configuração de retry
+      OLLAMA_RETRY_COUNT: 5
+      OLLAMA_RETRY_DELAY: 10
+      WAIT_FOR_OLLAMA: true
+
+    # Adicionar host.docker.internal para acessar Ollama no host
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    # Reiniciar automaticamente
+    restart: unless-stopped
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "./healthcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  coderag_data:
+    driver: local
+  coderag_chroma:
+    driver: local
